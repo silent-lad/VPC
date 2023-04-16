@@ -1,0 +1,329 @@
+provider "aws" {
+  access_key = var.access_key 
+  secret_key = var.secret_key 
+  region     = var.region
+}
+
+resource "aws_key_pair" "ssh_keys" {
+  key_name   = "ssh_keys"
+  public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDMhsGyjW6TztavBx0Y6nJmaGM5/P6igQ6j2IQ4zOtLM3Mhl/m7XuIaP+giSL3E2DwyfPVrJYMrjB5r/5VtjWMWBcZJOwRZdkdoPbuTVdw+GlJQHb63m0QD+4luw6NvGcNeuDyfl5qadUBujdAqxmfA2l86DdAOUqBrgacZNa+ZAnUpCSSdCvnKbm/hpqbx5fHbrWJb6or6QbpCb90yIDLGFCNJJRlKVdawwi8IM8hNSNEQEAaudNgJfPio7cPSUui7U7eKqyGkg1eDPEYGRV7fC/4uOQWNsmkxKUxLKKWHj5QZY1/HOgYrNs5ghlY/HJrpOQcEcb5eivCATQhcJgPfeuEMNDPFQjxBRI8oc4kPFXqohEwomaadF9sz9SGQAJT61/c71qMtC8sQOibsqug8VcfBKHIkromn2jv7WnCCHxeZ+nJFvaVqf8d/Ju43Z9IpWaeMd1I6LIDceXYesB1S8WK27TdWs5baOiB4Tczv3p0SGEwKXq2ld3HiA38ZWPE= divyanshtripathi@Divyansh-Tripathi"
+}
+
+# Create VPC
+# terraform aws create vpc
+resource "aws_vpc" "setu_vpc" {
+  cidr_block              = "${var.vpc-cidr}"
+  instance_tenancy        = "default"
+  enable_dns_hostnames    = true
+
+  tags      = {
+    Name    = "Test VPC"
+  }
+}
+
+# Create Internet Gateway and Attach it to VPC
+# terraform aws create internet gateway
+resource "aws_internet_gateway" "internet-gateway" {
+  vpc_id    = aws_vpc.setu_vpc.id
+
+  tags      = {
+    Name    = "Test IGW"
+  }
+}
+
+# Create Public Subnet 1
+# terraform aws create subnet
+resource "aws_subnet" "public-subnet-1" {
+  vpc_id                  = aws_vpc.setu_vpc.id
+  cidr_block              = "${var.public-subnet-cidr}"
+  availability_zone       = "ap-south-1a"
+  map_public_ip_on_launch = true
+
+  tags      = {
+    Name    = "Public Subnet 1"
+  }
+}
+
+# Create Route Table and Add Public Route
+# terraform aws create route table
+resource "aws_route_table" "public-route-table" {
+  vpc_id       = aws_vpc.setu_vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.internet-gateway.id
+  }
+
+  tags       = {
+    Name     = "Public Route Table"
+  }
+}
+
+# Associate Public Subnet to "Public Route Table"
+# terraform aws associate subnet with route table
+resource "aws_route_table_association" "public-subnet-1-route-table-association" {
+  subnet_id           = aws_subnet.public-subnet-1.id
+  route_table_id      = aws_route_table.public-route-table.id
+}
+
+# Create Private Subnet 1
+# terraform aws create subnet
+resource "aws_subnet" "private-subnet-1" {
+  vpc_id                   = aws_vpc.setu_vpc.id
+  cidr_block               = "${var.private-subnet-1-cidr}"
+  availability_zone        = "ap-south-1a"
+  map_public_ip_on_launch  = false
+
+  tags      = {
+    Name    = "Private Subnet 1 | App Tier"
+  }
+}
+
+
+# Create Private Subnet 2
+# terraform aws create subnet
+resource "aws_subnet" "private-subnet-2" {
+  vpc_id                   = aws_vpc.setu_vpc.id
+  cidr_block               = "${var.private-subnet-2-cidr}"
+  availability_zone        = "ap-south-1a"
+  map_public_ip_on_launch  = false
+
+  tags      = {
+    Name    = "Private Subnet 2 | Database Tier"
+  }
+}
+
+resource "aws_default_security_group" "default" {
+  vpc_id = aws_vpc.setu_vpc.id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port         = 0
+    to_port           = 0
+    protocol          = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# resource "aws_security_group_rule" "vpc_out" {
+#   type        = "egress"
+#   from_port   = 0
+#   to_port     = 0
+#   protocol    = "-1"
+#   cidr_blocks = [aws_vpc.setu_vpc.cidr_block]
+ 
+#   security_group_id = aws_default_security_group.default.id
+# }
+
+resource "aws_network_acl" "public_acl" {
+  vpc_id = aws_vpc.setu_vpc.id
+  subnet_ids = "${aws_subnet.public-subnet-1.*.id}"
+  # Create a rule allowing all inbound traffic from any source
+  ingress {
+    from_port = 0
+    to_port = 0
+    protocol = "-1"
+    rule_no = 100
+    action = "allow"
+    cidr_block = "0.0.0.0/0"
+  }
+
+  # Create a rule allowing outbound traffic to any destination
+  egress {
+    from_port = 0
+    to_port = 0
+    protocol = "-1"
+    rule_no = 101
+    action = "allow"
+    cidr_block = "0.0.0.0/0"
+  }
+}
+
+resource "aws_network_acl" "private_application_acl" {
+  vpc_id = aws_vpc.setu_vpc.id
+  subnet_ids = "${aws_subnet.private-subnet-1.*.id}"
+
+  # Create a rule allowing inbound traffic on port 80 from any source inside VPC
+  ingress {
+    from_port = 0
+    to_port = 0
+    protocol = "-1"
+    rule_no = 100
+    action = "allow"
+    cidr_block = aws_vpc.setu_vpc.cidr_block
+  }
+
+  # Create a rule allowing outbound traffic to any destination inside VPC
+  egress {
+    from_port = 0
+    to_port = 0
+    protocol = "-1"
+    rule_no = 101
+    action = "allow"
+    cidr_block = aws_vpc.setu_vpc.cidr_block
+  }
+}
+
+resource "aws_network_acl" "private_database_acl" {
+  vpc_id = aws_vpc.setu_vpc.id
+  subnet_ids = "${aws_subnet.private-subnet-2.*.id}"
+
+  # Create a rule allowing inbound traffic on port 80 from any source inside VPC
+  ingress {
+    protocol   = "-1"
+    action     = "allow"
+    cidr_block = "${var.private-subnet-1-cidr}"
+    from_port  = 0
+    rule_no = 101
+    to_port    = 0
+  }
+
+  # Create a rule allowing outbound traffic to any destination
+  egress {
+    protocol   = "tcp"
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 0
+    rule_no = 100
+    to_port    = 0
+  }
+
+}
+
+resource "aws_instance" "public_microservice" {
+    ami = data.aws_ami.ubuntu.id
+    instance_type = "t2.micro"
+    subnet_id = aws_subnet.public-subnet-1.id
+    key_name = "ssh_keys"
+
+    user_data = <<-EOF
+              #!/bin/bash
+              echo "Making a curl request to the second EC2 instance"
+              sudo apt update -y
+              sudo apt install apache2 -y
+              sudo chown -R $USER:$USER /var/www
+              echo "I am Public Microservice" > /var/www/html/index.html
+              sudo systemctl start apache2.service
+              EOF
+
+    tags = {
+        Name = "Microservice 1 accesible by public internet"
+    }
+}
+
+resource "aws_instance" "private_microservice_1" {
+    ami = data.aws_ami.ubuntu.id
+    instance_type = "t2.micro"
+    subnet_id = aws_subnet.private-subnet-1.id
+    key_name = "ssh_keys"
+
+    user_data = <<-EOF
+                #!/bin/bash
+                echo "Making a test DB request to the mock DB instance"
+                sudo apt install apache2 -y
+                sudo chown -R $USER:$USER /var/www
+                echo "I am Private Microservice 1 " > /var/www/html/index.html
+                sudo systemctl start apache2.service
+                EOF
+
+    tags = {
+        Name = "Private Microservice 1"
+    }
+}
+
+data "aws_ami" "ubuntu" {
+  most_recent = true
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+
+  owners = ["099720109477"] # Canonical
+}
+
+resource "aws_instance" "private_microservice_2" {
+    ami = data.aws_ami.ubuntu.id
+    instance_type = "t2.micro"
+    subnet_id = aws_subnet.private-subnet-1.id
+    key_name = "ssh_keys"
+
+    user_data = <<-EOF
+                #!/bin/bash
+                echo "Making a test DB request to the mock DB instance"
+                sudo apt install apache2 -y
+                sudo chown -R $USER:$USER /var/www
+                echo "I am Private Microservice 2 " > /var/www/html/index.html
+                sudo systemctl start apache2.service
+                EOF
+
+    tags = {
+        Name = "Private Microservice 2"
+    }
+}
+
+# Create mock DB instance in second Private instance only accesible by private subnet 1's microservice 1 and 2
+resource "aws_instance" "mock_db_service" {
+    ami = data.aws_ami.ubuntu.id
+    instance_type = "t2.micro"
+    key_name = "ssh_keys"
+    subnet_id = aws_subnet.private-subnet-2.id
+
+    user_data = <<-EOF
+                #!/bin/bash
+                sudo apt install apache2 -y
+                sudo chown -R $USER:$USER /var/www
+                echo "Hello, World! from database " > /var/www/html/index.html
+                sudo systemctl start apache2.service
+                EOF
+
+    tags = {
+        Name = "Mock Database"
+    }
+}
+
+
+resource "aws_eip" "nat_gateway" {
+  vpc = true
+}
+
+resource "aws_nat_gateway" "nat_gateway" {
+  allocation_id = aws_eip.nat_gateway.id
+  subnet_id = aws_subnet.public-subnet-1.id
+  tags = {
+    "Name" = "Nat Gateway"
+  }
+}
+
+output "nat_gateway_ip" {
+  value = aws_eip.nat_gateway.public_ip
+}
+
+resource "aws_route_table" "nat_route_table" {
+  vpc_id = aws_vpc.setu_vpc.id
+  route {
+    cidr_block = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat_gateway.id
+  }
+}
+
+resource "aws_route_table_association" "private_subnet_1_nat_rt_association" {
+  subnet_id = aws_subnet.private-subnet-1.id
+  route_table_id = aws_route_table.nat_route_table.id
+}
+
+resource "aws_route_table_association" "private_subnet_2_nat_rt_association" {
+  subnet_id = aws_subnet.private-subnet-2.id
+  route_table_id = aws_route_table.nat_route_table.id
+}

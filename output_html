@@ -1,0 +1,15 @@
+-- Hello, World! from PUBLIC MICROSERVICE --
+-----------------
+-- RESPONSE FROM MICROSERVICE 1: --
+> Hello, World! from private microservice 1
+> RESPONSE FROM INTERNAL DATABASE TO PRIVATE MICROSERVICE 1:
+1 1
+------------------
+-- RESPONSE FROM MICROSERVICE 2: --
+> Hello, World! from private microservice 2
+> RESPONSE FROM INTERNAL DATABASE TO PRIVATE MICROSERVICE 2:
+1 1
+-----------------
+RESPONSE FROM INTERNAL DATABASE TO PUBLIC MICROSERVICE:
+DB Not reachable
+-----------------
